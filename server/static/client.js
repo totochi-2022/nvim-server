@@ -381,6 +381,27 @@ class NeovimClient {
             terminal.addEventListener("keydown", (event) => {
                 if (!this.connected) return;
                 event.preventDefault();
+
+                // GUI-style font zoom (Neovide-like). Handled in the client so
+                // it never reaches Neovim. Ctrl +/=, Ctrl -, Ctrl 0 to reset.
+                if (
+                    event.ctrlKey && !event.altKey && !event.metaKey &&
+                    this.renderer
+                ) {
+                    if (event.key === "=" || event.key === "+") {
+                        this.renderer.zoomFont(1);
+                        return;
+                    }
+                    if (event.key === "-" || event.key === "_") {
+                        this.renderer.zoomFont(-1);
+                        return;
+                    }
+                    if (event.key === "0") {
+                        this.renderer.resetZoom();
+                        return;
+                    }
+                }
+
                 const key = this.translateKey(event);
                 if (key) {
                     this.sendInput(key);

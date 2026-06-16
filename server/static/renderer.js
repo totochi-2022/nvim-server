@@ -4,6 +4,7 @@ class NeovimRenderer {
         this.ctx = canvas.getContext("2d");
         this.fontFamily = "monospace";
         this.fontSize = 14;
+        this.baseFontSize = 14;
         this.cellWidth = 12;
         this.cellHeight = 20;
         this.rows = 24;
@@ -105,6 +106,7 @@ class NeovimRenderer {
             }
             if (size && size > 0) {
                 this.fontSize = size;
+                this.baseFontSize = size;
             }
         }
 
@@ -114,6 +116,21 @@ class NeovimRenderer {
         if (globalThis.client && globalThis.client.connected) {
             globalThis.client.sendResize(this.cols, this.rows);
         }
+    }
+
+    // Adjust font size on the fly (GUI-style Ctrl+=/Ctrl+- zoom). updateFont()
+    // re-measures cells and reflows the grid to the viewport.
+    zoomFont(delta) {
+        const next = Math.min(72, Math.max(6, this.fontSize + delta));
+        if (next === this.fontSize) return;
+        this.fontSize = next;
+        this.updateFont();
+    }
+
+    resetZoom() {
+        if (this.fontSize === this.baseFontSize) return;
+        this.fontSize = this.baseFontSize;
+        this.updateFont();
     }
 
     initGrid() {

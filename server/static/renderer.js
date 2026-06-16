@@ -102,7 +102,17 @@ class NeovimRenderer {
                 .map((f) => `"${f}"`);
 
             if (families.length > 0) {
-                this.fontFamily = `${families.join(", ")}, monospace`;
+                // Append Nerd Font fallbacks so icons the primary font lacks
+                // (devicons, powerline, etc.) still render. The browser uses
+                // these per-glyph and silently ignores any that aren't
+                // installed, so regular text stays in the primary font.
+                const iconFallbacks = [
+                    '"Symbols Nerd Font Mono"',
+                    '"Symbols Nerd Font"',
+                    '"Hack Nerd Font"',
+                ].filter((f) => !families.includes(f));
+                this.fontFamily =
+                    `${[...families, ...iconFallbacks].join(", ")}, monospace`;
             }
             if (size && size > 0) {
                 this.fontSize = size;

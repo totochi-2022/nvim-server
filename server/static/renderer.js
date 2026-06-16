@@ -32,36 +32,80 @@ class NeovimRenderer {
         this.ctx.font = `${this.fontSize}px ${this.fontFamily}`;
         this.ctx.textBaseline = "top";
 
-        this.cellWidth = Math.round(this.fontSize * 0.6);
-        this.cellHeight = Math.ceil(this.fontSize * 1.2);
+        // Measure the real monospace advance instead of guessing fontSize*0.6,
+        // otherwise glyphs drift and overlap as a line gets longer.
+        const metrics = this.ctx.measureText("0");
+        const advance = metrics.width;
+        this.cellWidth = advance > 0
+            ? Math.round(advance)
+            : Math.round(this.fontSize * 0.6);
 
-        const currentWidth = this.canvas.width || this.canvas.offsetWidth;
-        const currentHeight = this.canvas.height || this.canvas.offsetHeight;
+        // Derive height from font metrics when available, fall back to 1.2x.
+        const ascent = metrics.fontBoundingBoxAscent;
+        const descent = metrics.fontBoundingBoxDescent;
+        this.cellHeight = (ascent && descent)
+            ? Math.ceil(ascent + descent)
+            : Math.ceil(this.fontSize * 1.2);
 
-        this.cols = Math.floor(currentWidth / this.cellWidth);
-        this.rows = Math.floor(currentHeight / this.cellHeight);
-
-        this.initGrid();
-        this.redraw();
-
+        // Recompute the grid for the new cell size. Prefer the client's
+        // viewport-based resize (CSS pixels, dpr-aware) so the row count matches
+        // what's actually visible; otherwise the bottom rows (status / cmdline)
+        // get pushed off-screen on HiDPI displays.
         if (globalThis.client && globalThis.client.connected) {
-            globalThis.client.sendResize(this.cols, this.rows);
+            globalThis.client.resizeTerminalToFullViewport();
+        } else {
+            // Fall back to CSS-pixel layout size, not the device-pixel backing
+            // store (canvas.width includes the devicePixelRatio scale).
+            const cssWidth = this.canvas.offsetWidth ||
+                this.cols * this.cellWidth;
+            const cssHeight = this.canvas.offsetHeight ||
+                this.rows * this.cellHeight;
+            this.cols = Math.max(1, Math.floor(cssWidth / this.cellWidth));
+            this.rows = Math.max(1, Math.floor(cssHeight / this.cellHeight));
+            this.initGrid();
+            this.redraw();
         }
     }
 
     setFont(fontString) {
-        const fontMatch = fontString.match(/^([^:]+)(?::h(\d+))?$/) ||
-            fontString.match(/^([^\d]+)\s+(\d+)$/);
+        if (typeof fontString === "string" && fontString.trim()) {
+            // guifont comes in two shapes:
+            //   - nvim form:        "Cica:h11"  (also "A:h11,B:h11" with fallbacks)
+            //   - gtk/fontconfig:   "Cica 11"   (trailing numeric token is the size)
+            // The family itself may contain spaces ("Hack Nerd Font") and the
+            // height may carry extra flags (":b", ":w8"), so parse defensively.
+            // vim escapes spaces in guifont as "\ "; a Lua config that keeps the
+            // backslash (vim.o.guifont = 'Cica\\ 11') sends a literal "Cica\ 11",
+            // so strip backslash escapes before parsing ("\X" -> "X").
+            let spec = fontString.trim().replace(/\\(.)/g, "$1");
+            let size = null;
 
-        if (fontMatch) {
-            const fontFamily = fontMatch[1].trim();
-            const newFontSize = parseInt(fontMatch[2]) || 12;
-
-            if (newFontSize !== this.fontSize) {
-                this.fontSize = newFontSize;
+            const hMatch = spec.match(/:h(\d+(?:\.\d+)?)/);
+            if (hMatch) {
+                size = parseFloat(hMatch[1]);
+                // Strip ":hSIZE" and any other ":flag" suffixes from each family.
+                spec = spec.replace(/:[a-z]?\d+(?:\.\d+)?/gi, "")
+                    .replace(/:[^,]*/g, "");
+            } else {
+                const sizeMatch = spec.match(/^(.*?)\s+(\d+(?:\.\d+)?)$/);
+                if (sizeMatch) {
+                    spec = sizeMatch[1];
+                    size = parseFloat(sizeMatch[2]);
+                }
             }
 
-            this.fontFamily = `${fontFamily},monospace`;
+            const families = spec
+                .split(",")
+                .map((f) => f.trim().replace(/^["']|["']$/g, ""))
+                .filter((f) => f.length > 0)
+                .map((f) => `"${f}"`);
+
+            if (families.length > 0) {
+                this.fontFamily = `${families.join(", ")}, monospace`;
+            }
+            if (size && size > 0) {
+                this.fontSize = size;
+            }
         }
 
         this.updateFont();
@@ -421,12 +465,11 @@ class NeovimRenderer {
                     }
                     break;
                 case "linespace":
-                    if (typeof value === "number") {
-                        this.cellHeight = Math.ceil(
-                            this.fontSize * (1.2 + value / 10),
-                        );
-                        this.setupCanvas();
-                    }
+                    // Intentionally ignore linespace: extra row spacing leaves
+                    // gaps in box-drawing borders (Telescope etc.) because the
+                    // glyphs don't stretch to fill it. Keep the tight metric
+                    // height from updateFont() so borders tile seamlessly.
+                    this.updateFont();
                     break;
                 default:
                     console.log(`Unhandled Option ${name} set to:`, value);

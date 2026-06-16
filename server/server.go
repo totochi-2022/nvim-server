@@ -21,6 +21,10 @@ type ClientSession struct {
 	address    string
 	active     bool
 	uiAttached bool
+	// gorilla/websocket forbids concurrent writes to a single connection.
+	// redraw notifications arrive on nvim's RPC goroutine while clipboard /
+	// status messages are written from others, so serialize all writes.
+	writeMu sync.Mutex
 }
 
 type Server struct {
@@ -89,7 +93,9 @@ func (ctx *Server) sendToClient(session *ClientSession, message map[string]any) 
 		return
 	}
 
+	session.writeMu.Lock()
 	err := session.conn.WriteJSON(message)
+	session.writeMu.Unlock()
 	if err != nil {
 		log.Printf("Write error to client: %v", err)
 		session.active = false
@@ -307,10 +313,12 @@ func (ctx *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		ctx.mu.Unlock()
 	}()
 
+	session.writeMu.Lock()
 	conn.WriteJSON(map[string]any{
 		"type": "ready",
 		"data": "WebSocket connected. Please provide Neovim server addresctx.",
 	})
+	session.writeMu.Unlock()
 
 	for {
 		var msg map[string]any

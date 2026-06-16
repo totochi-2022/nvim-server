@@ -61,3 +61,21 @@ globalThis.connectToNeovim = function () {
         client.updateStatus("Please enter a valid address");
     }
 };
+
+// Start a Neovim instance on the server host, then connect to it. Used when the
+// target address isn't listening yet.
+globalThis.startNeovim = function () {
+    const addressInput = document.getElementById("nvim-address");
+    if (!addressInput) {
+        console.error("Address input not found");
+        return;
+    }
+
+    const address = addressInput.value;
+
+    if (address.trim()) {
+        client.startNeovim(address);
+    } else {
+        client.updateStatus("Please enter a valid address");
+    }
+};

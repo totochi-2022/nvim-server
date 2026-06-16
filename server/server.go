@@ -7,9 +7,14 @@ import (
 	"github.com/neovim/go-client/nvim"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
+	"os"
+	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 )
 
 //go:embed static/*
@@ -103,6 +108,49 @@ func (ctx *Server) sendToClient(session *ClientSession, message map[string]any) 
 	}
 }
 
+// spawnNeovim launches a detached headless Neovim listening on address when one
+// isn't already there. Restricted to loopback targets so a browser can't make
+// the host start processes for arbitrary remote addresses.
+func spawnNeovim(address string) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return fmt.Errorf("invalid address %q: %w", address, err)
+	}
+	if host != "localhost" && host != "127.0.0.1" && host != "::1" {
+		return fmt.Errorf("refusing to start Neovim for non-local address %q", address)
+	}
+
+	// Already listening? Nothing to do.
+	if conn, err := net.DialTimeout("tcp", address, 200*time.Millisecond); err == nil {
+		conn.Close()
+		return nil
+	}
+
+	cmd := exec.Command("nvim", "--headless", "--listen", address)
+	// Detach into its own session so it survives this server restarting/exiting,
+	// and behaves like a normal interactive Neovim (quits on :q). Stdin is nil
+	// (= /dev/null), which a headless instance tolerates without exiting.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if home, err := os.UserHomeDir(); err == nil {
+		cmd.Dir = home
+	}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start nvim: %w", err)
+	}
+	// Reap the process so it doesn't linger as a zombie after :q.
+	go cmd.Wait()
+
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		if conn, err := net.DialTimeout("tcp", address, 200*time.Millisecond); err == nil {
+			conn.Close()
+			return nil
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+	return fmt.Errorf("nvim did not start listening on %s", address)
+}
+
 func (ctx *Server) handleClientMessage(session *ClientSession, msg map[string]any) {
 	switch msg["type"] {
 	case "connect":
@@ -127,6 +175,38 @@ func (ctx *Server) handleClientMessage(session *ClientSession, msg map[string]an
 		ctx.sendToClient(session, map[string]any{
 			"type": "connected",
 			"data": "Successfully connected to Neovim",
+		})
+	case "spawn":
+		address, ok := msg["address"].(string)
+		if !ok {
+			ctx.sendToClient(session, map[string]any{
+				"type": "error",
+				"data": "Invalid server address",
+			})
+			return
+		}
+
+		if err := spawnNeovim(address); err != nil {
+			log.Printf("Failed to spawn Neovim at %s: %v", address, err)
+			ctx.sendToClient(session, map[string]any{
+				"type": "error",
+				"data": fmt.Sprintf("Failed to start Neovim: %v", err),
+			})
+			return
+		}
+
+		if err := ctx.connectSessionToNeovim(session, address); err != nil {
+			log.Printf("Failed to connect after spawn at %s: %v", address, err)
+			ctx.sendToClient(session, map[string]any{
+				"type": "error",
+				"data": fmt.Sprintf("Started Neovim but failed to connect: %v", err),
+			})
+			return
+		}
+
+		ctx.sendToClient(session, map[string]any{
+			"type": "connected",
+			"data": "Started and connected to Neovim",
 		})
 	case "clipboard_content":
 		if !session.active || session.nvim == nil {

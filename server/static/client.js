@@ -125,6 +125,15 @@ class NeovimClient {
                 this.updateStatus("Error: " + msg.data);
                 this.updateTitle();
                 this.updateFavicon("error");
+                // Surface the form (it may be dimmed mid auto-connect) so the
+                // "Start Neovim" button is usable when nothing is listening.
+                if (!this.connected) {
+                    const form = document.getElementById("connection-form");
+                    if (form) {
+                        form.style.display = "block";
+                        form.style.opacity = "1";
+                    }
+                }
                 break;
             }
             case "redraw": {
@@ -654,6 +663,29 @@ class NeovimClient {
                     address: address,
                 }),
             );
+        }
+    }
+
+    startNeovim(address) {
+        this.updateStatus("Starting Neovim at " + address + "...");
+        const payload = JSON.stringify({ type: "spawn", address: address });
+
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            this.connect();
+            const checkConnection = setInterval(() => {
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    clearInterval(checkConnection);
+                    this.ws.send(payload);
+                }
+            }, 100);
+            setTimeout(() => {
+                clearInterval(checkConnection);
+                if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+                    this.updateStatus("Failed to reconnect to server");
+                }
+            }, 5000);
+        } else {
+            this.ws.send(payload);
         }
     }
 

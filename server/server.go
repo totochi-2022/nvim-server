@@ -467,6 +467,7 @@ func (ctx *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		ctx.mu.Lock()
 		if session.nvim != nil {
 			ctx.restoreMarkdownPreview(session)
+			ctx.restoreWebOpen(session)
 			session.nvim.Close()
 		}
 		delete(ctx.clients, conn)
@@ -513,6 +514,7 @@ func (ctx *Server) connectSessionToNeovim(session *ClientSession, address string
 	}
 
 	ctx.setupMarkdownPreview(session)
+	ctx.setupWebOpen(session)
 
 	go func() {
 		if err := ctx.listenToNeovimEvents(session); err != nil {
@@ -552,8 +554,9 @@ return true
 
 	session.nvim.RegisterHandler("mkdp_open", func(url string) {
 		ctx.sendToClient(session, map[string]any{
-			"type": "open_preview",
-			"url":  url,
+			"type":  "open_preview",
+			"url":   url,
+			"label": "Markdown Preview",
 		})
 	})
 }
@@ -570,6 +573,34 @@ vim.g.mkdp_browserfunc = vim.g.nvim_server_prev_mkdp_browserfunc or ''
 vim.g.nvim_server_prev_mkdp_browserfunc = nil
 return true
 `, &ok)
+}
+
+// setupWebOpen exposes this session's RPC channel as g:nvim_server_channel and
+// forwards any 'web_open_url' notification to the client as a preview pane. This
+// is a generic bridge: any tool (e.g. typst-preview) can route a URL to the
+// browser pane by rpcnotify(g:nvim_server_channel, 'web_open_url', url) while a
+// web client is attached, and fall back to a real browser otherwise.
+func (ctx *Server) setupWebOpen(session *ClientSession) {
+	if err := session.nvim.SetVar("nvim_server_channel", session.nvim.ChannelID()); err != nil {
+		log.Printf("Failed to set nvim_server_channel: %v", err)
+		return
+	}
+	session.nvim.RegisterHandler("web_open_url", func(url string, label string) {
+		ctx.sendToClient(session, map[string]any{
+			"type":  "open_preview",
+			"url":   url,
+			"label": label,
+		})
+	})
+}
+
+// restoreWebOpen clears the channel so tools fall back to a real browser once the
+// web client disconnects.
+func (ctx *Server) restoreWebOpen(session *ClientSession) {
+	if session.nvim == nil {
+		return
+	}
+	_ = session.nvim.SetVar("nvim_server_channel", 0)
 }
 
 func (ctx *Server) setupClipboard(session *ClientSession) error {

@@ -157,7 +157,7 @@ class NeovimClient {
                 break;
             }
             case "open_preview": {
-                if (msg.url) this.openPreview(msg.url);
+                if (msg.url) this.openPreview(msg.url, msg.label);
                 break;
             }
             default: {
@@ -234,10 +234,13 @@ class NeovimClient {
         this.sendResize(newDimensions.width, newDimensions.height);
     }
 
-    openPreview(url) {
+    openPreview(url, label) {
         const pane = document.getElementById("preview-pane");
         const frame = document.getElementById("preview-frame");
         if (!pane || !frame) return;
+
+        const title = document.getElementById("preview-title");
+        if (title) title.textContent = label || "Preview";
 
         frame.src = url;
         pane.classList.add("active");

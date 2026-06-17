@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Preview</title>
+    <!-- three.js (STL用) は ESM import map で解決 -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+    <style>
+        :root { color-scheme: light dark; }
+        html, body { margin: 0; height: 100%; }
+        body {
+            background: Canvas;
+            color: CanvasText;
+            font-family: system-ui, sans-serif;
+            overflow: hidden;
+        }
+        #root { position: fixed; inset: 0; }
+        #err { padding: 1em; white-space: pre-wrap; color: #e06c75; font-family: monospace; }
+        img.preview-svg {
+            max-width: 100%; max-height: 100%;
+            display: block; margin: auto;
+            position: absolute; inset: 0;
+        }
+        #chart-wrap { position: absolute; inset: 0; padding: 16px; box-sizing: border-box; }
+        canvas.viewer { display: block; width: 100%; height: 100%; }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+    <script type="module">
+        const q = new URLSearchParams(location.search);
+        const kind = q.get("kind");
+        const path = q.get("path") || "";
+        const fileUrl = "/file?path=" + encodeURIComponent(path);
+        const root = document.getElementById("root");
+        const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+        const fg = dark ? "#dddddd" : "#222222";
+        const grid = dark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)";
+        const bg = dark ? 0x1a1a1a : 0xf5f5f5;
+
+        function showErr(e) {
+            root.innerHTML = '<pre id="err"></pre>';
+            root.firstChild.textContent = String((e && e.stack) || e);
+        }
+
+        function loadScript(src) {
+            return new Promise((resolve, reject) => {
+                const s = document.createElement("script");
+                s.src = src;
+                s.onload = resolve;
+                s.onerror = () => reject(new Error("failed to load " + src));
+                document.head.appendChild(s);
+            });
+        }
+
+        // --- SVG / 画像 -------------------------------------------------------
+        function renderImage() {
+            const img = document.createElement("img");
+            img.className = "preview-svg";
+            img.src = fileUrl;
+            img.onerror = () => showErr("画像の読み込みに失敗: " + path);
+            root.appendChild(img);
+        }
+
+        // --- CSV → グラフ (Chart.js) -----------------------------------------
+        function parseCSV(text) {
+            const rows = text.trim().split(/\r?\n/).map((line) => {
+                // 簡易CSV（カンマ区切り、クォート未対応）
+                return line.split(",").map((c) => c.trim());
+            });
+            return rows;
+        }
+
+        async function renderCSV() {
+            await loadScript("https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js");
+            const text = await (await fetch(fileUrl)).text();
+            const rows = parseCSV(text);
+            if (rows.length < 2) throw new Error("CSVに行が足りません");
+            const headers = rows[0];
+            const body = rows.slice(1);
+            const labels = body.map((r) => r[0]);
+            const palette = [
+                "#4e79a7", "#f28e2b", "#59a14f", "#e15759",
+                "#76b7b2", "#edc948", "#b07aa1", "#ff9da7",
+            ];
+            const datasets = headers.slice(1).map((h, i) => ({
+                label: h,
+                data: body.map((r) => parseFloat(r[i + 1])),
+                borderColor: palette[i % palette.length],
+                backgroundColor: palette[i % palette.length] + "55",
+                tension: 0.2,
+            }));
+
+            const wrap = document.createElement("div");
+            wrap.id = "chart-wrap";
+            const canvas = document.createElement("canvas");
+            wrap.appendChild(canvas);
+            root.appendChild(wrap);
+
+            // eslint-disable-next-line no-undef
+            new Chart(canvas, {
+                type: "line",
+                data: { labels, datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: fg } } },
+                    scales: {
+                        x: { ticks: { color: fg }, grid: { color: grid } },
+                        y: { ticks: { color: fg }, grid: { color: grid } },
+                    },
+                },
+            });
+        }
+
+        // --- STL → 3D (three.js) --------------------------------------------
+        async function renderSTL() {
+            const THREE = await import("three");
+            const { STLLoader } = await import("three/addons/loaders/STLLoader.js");
+            const { OrbitControls } = await import("three/addons/controls/OrbitControls.js");
+
+            const buf = await (await fetch(fileUrl)).arrayBuffer();
+            const geometry = new STLLoader().parse(buf);
+            geometry.computeVertexNormals();
+            geometry.center();
+
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(bg);
+            const material = new THREE.MeshStandardMaterial({
+                color: 0x8899aa, metalness: 0.1, roughness: 0.6,
+            });
+            const mesh = new THREE.Mesh(geometry, material);
+            scene.add(mesh);
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+            const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+            dir.position.set(1, 1, 1);
+            scene.add(dir);
+
+            const camera = new THREE.PerspectiveCamera(
+                45, window.innerWidth / window.innerHeight, 0.1, 10000,
+            );
+            geometry.computeBoundingSphere();
+            const r = geometry.boundingSphere.radius || 10;
+            camera.position.set(0, 0, r * 3);
+
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.domElement.className = "viewer";
+            root.appendChild(renderer.domElement);
+
+            const controls = new OrbitControls(camera, renderer.domElement);
+            window.addEventListener("resize", () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+            (function loop() {
+                requestAnimationFrame(loop);
+                controls.update();
+                renderer.render(scene, camera);
+            })();
+        }
+
+        // --- DXF → 2D CAD: dxf ライブラリで SVG に変換して表示（軽量・確実） -----
+        async function renderDXF() {
+            const { Helper } = await import("https://esm.sh/dxf@5.3.1");
+            const text = await (await fetch(fileUrl)).text();
+            const svg = new Helper(text).toSVG();
+
+            const wrap = document.createElement("div");
+            wrap.style.cssText =
+                "position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:8px;box-sizing:border-box;";
+            wrap.innerHTML = svg;
+            const el = wrap.querySelector("svg");
+            if (el) {
+                el.style.maxWidth = "100%";
+                el.style.maxHeight = "100%";
+                // dark の場合は背景が暗いので線を見やすく反転気味に
+                if (dark) wrap.style.filter = "invert(1) hue-rotate(180deg)";
+            }
+            root.appendChild(wrap);
+        }
+
+        async function main() {
+            if (!path) return showErr("path 未指定");
+            switch (kind) {
+                case "svg":
+                case "image": return renderImage();
+                case "csv": return renderCSV();
+                case "stl": return renderSTL();
+                case "dxf": return renderDXF();
+                default: return showErr("未対応の種類: " + kind);
+            }
+        }
+        main().catch(showErr);
+    </script>
+</body>
+
+</html>

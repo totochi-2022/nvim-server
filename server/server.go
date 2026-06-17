@@ -59,6 +59,23 @@ func Serve(address string) error {
 		_ = json.NewEncoder(w).Encode(listSessions())
 	})
 
+	// Serve a file from disk by absolute path, used by the built-in previewer
+	// (preview.html fetches /file?path=...). Localhost-only personal tool.
+	http.HandleFunc("/file", func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Query().Get("path")
+		if p == "" {
+			http.Error(w, "missing path", http.StatusBadRequest)
+			return
+		}
+		info, err := os.Stat(p)
+		if err != nil || info.IsDir() {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		http.ServeFile(w, r, p)
+	})
+
 	log.Printf("Server starting on %s", address)
 
 	err := http.ListenAndServe(address, nil)

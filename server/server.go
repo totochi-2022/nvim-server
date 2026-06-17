@@ -2,6 +2,7 @@ package server
 
 import (
 	"embed"
+	"encoding/json"
 	"fmt"
 	"github.com/gorilla/websocket"
 	"github.com/neovim/go-client/nvim"
@@ -11,6 +12,8 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -50,6 +53,11 @@ func Serve(address string) error {
 	http.Handle("/", http.FileServer(http.FS(staticFS)))
 
 	http.HandleFunc("/ws", ctx.handleWebSocket)
+
+	http.HandleFunc("/sessions", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(listSessions())
+	})
 
 	log.Printf("Server starting on %s", address)
 
@@ -108,20 +116,86 @@ func (ctx *Server) sendToClient(session *ClientSession, message map[string]any) 
 	}
 }
 
-// spawnNeovim launches a detached headless Neovim listening on address when one
-// isn't already there. Restricted to loopback targets so a browser can't make
-// the host start processes for arbitrary remote addresses.
-func spawnNeovim(address string) error {
-	host, _, err := net.SplitHostPort(address)
+var sessionNameRe = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
+
+// sessionDir is where named Neovim instances keep their listen sockets so they
+// can be discovered and listed by the connection screen.
+func sessionDir() string {
+	base, err := os.UserCacheDir()
 	if err != nil {
-		return fmt.Errorf("invalid address %q: %w", address, err)
+		base = os.TempDir()
 	}
-	if host != "localhost" && host != "127.0.0.1" && host != "::1" {
-		return fmt.Errorf("refusing to start Neovim for non-local address %q", address)
+	return filepath.Join(base, "nvim-server")
+}
+
+// sessionSocket maps a user-supplied session name to a socket path in the
+// session dir, sanitizing the name so it can't escape the directory.
+func sessionSocket(name string) string {
+	clean := sessionNameRe.ReplaceAllString(name, "-")
+	clean = strings.Trim(clean, "-.")
+	if clean == "" {
+		clean = "nvim"
+	}
+	return filepath.Join(sessionDir(), clean+".sock")
+}
+
+type sessionInfo struct {
+	Address string `json:"address"`
+	Name    string `json:"name"`
+	Label   string `json:"label"`
+}
+
+// listSessions enumerates live Neovim sockets in the session dir. It labels each
+// with the instance's working directory and prunes sockets with no listener.
+func listSessions() []sessionInfo {
+	socks, _ := filepath.Glob(filepath.Join(sessionDir(), "*.sock"))
+	out := []sessionInfo{}
+	for _, sock := range socks {
+		name := strings.TrimSuffix(filepath.Base(sock), ".sock")
+		v, err := nvim.Dial(sock)
+		if err != nil {
+			// No listener: stale socket file, remove it.
+			os.Remove(sock)
+			continue
+		}
+		label := name
+		var cwd string
+		if err := v.Call("getcwd", &cwd); err == nil && cwd != "" {
+			label = cwd
+		}
+		v.Close()
+		out = append(out, sessionInfo{Address: sock, Name: name, Label: label})
+	}
+	return out
+}
+
+// spawnNeovim launches a detached headless Neovim listening on address when one
+// isn't already there. TCP targets are restricted to loopback, and socket
+// targets must live in the session dir, so a browser can't make the host start
+// processes for arbitrary remote addresses or write sockets anywhere.
+func spawnNeovim(address string) error {
+	network := "unix"
+	if strings.Contains(address, ":") {
+		network = "tcp"
+		host, _, err := net.SplitHostPort(address)
+		if err != nil {
+			return fmt.Errorf("invalid address %q: %w", address, err)
+		}
+		if host != "localhost" && host != "127.0.0.1" && host != "::1" {
+			return fmt.Errorf("refusing to start Neovim for non-local address %q", address)
+		}
+	} else {
+		abs, err := filepath.Abs(address)
+		if err != nil || filepath.Dir(abs) != sessionDir() {
+			return fmt.Errorf("refusing to create a socket outside the session dir")
+		}
+		if err := os.MkdirAll(sessionDir(), 0o700); err != nil {
+			return fmt.Errorf("failed to create session dir: %w", err)
+		}
 	}
 
 	// Already listening? Nothing to do.
-	if conn, err := net.DialTimeout("tcp", address, 200*time.Millisecond); err == nil {
+	if conn, err := net.DialTimeout(network, address, 200*time.Millisecond); err == nil {
 		conn.Close()
 		return nil
 	}
@@ -142,7 +216,7 @@ func spawnNeovim(address string) error {
 
 	deadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(deadline) {
-		if conn, err := net.DialTimeout("tcp", address, 200*time.Millisecond); err == nil {
+		if conn, err := net.DialTimeout(network, address, 200*time.Millisecond); err == nil {
 			conn.Close()
 			return nil
 		}
@@ -177,8 +251,13 @@ func (ctx *Server) handleClientMessage(session *ClientSession, msg map[string]an
 			"data": "Successfully connected to Neovim",
 		})
 	case "spawn":
-		address, ok := msg["address"].(string)
-		if !ok {
+		address, _ := msg["address"].(string)
+		// A "name" starts a discoverable socket session in the session dir;
+		// otherwise "address" (e.g. localhost:9000) is used directly.
+		if name, ok := msg["name"].(string); ok && name != "" {
+			address = sessionSocket(name)
+		}
+		if address == "" {
 			ctx.sendToClient(session, map[string]any{
 				"type": "error",
 				"data": "Invalid server address",

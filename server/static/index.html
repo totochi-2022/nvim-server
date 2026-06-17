@@ -9,9 +9,19 @@
 
 <body>
     <div id="connection-form">
-        <input type="text" id="nvim-address" placeholder="localhost:6666" value="localhost:6666">
-        <button onclick="connectToNeovim();">Connect to Neovim</button>
-        <button onclick="startNeovim();">Start Neovim</button>
+        <div id="session-section">
+            <div class="form-label">Sessions <button id="sessions-refresh" onclick="refreshSessions();">⟳</button></div>
+            <div id="session-list"></div>
+        </div>
+        <div class="form-row">
+            <input type="text" id="session-name" placeholder="new session name">
+            <button onclick="startSession();">Start new</button>
+        </div>
+        <div class="form-row">
+            <input type="text" id="nvim-address" placeholder="localhost:6666" value="localhost:6666">
+            <button onclick="connectToNeovim();">Connect</button>
+            <button onclick="startNeovim();">Start</button>
+        </div>
         <div id="status"></div>
     </div>
 

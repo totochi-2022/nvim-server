@@ -8,6 +8,7 @@ client.setupKeyboardHandlers();
 // Window load handler
 globalThis.addEventListener("load", () => {
     client.connect();
+    client.refreshSessions();
 
     const serverAddress = getUrlParameter("server");
     if (serverAddress && isValidServerAddress(serverAddress)) {
@@ -83,4 +84,20 @@ globalThis.startNeovim = function () {
 // Close the markdown preview pane.
 globalThis.closePreview = function () {
     client.closePreview();
+};
+
+// Refresh the list of discoverable Neovim sessions.
+globalThis.refreshSessions = function () {
+    client.refreshSessions();
+};
+
+// Start a new named (socket) session and connect to it.
+globalThis.startSession = function () {
+    const nameInput = document.getElementById("session-name");
+    const name = nameInput ? nameInput.value.trim() : "";
+    if (name) {
+        client.startSession(name);
+    } else {
+        client.updateStatus("Enter a session name");
+    }
 };

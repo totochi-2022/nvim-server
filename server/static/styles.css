@@ -129,3 +129,40 @@ body {
 	padding: 5px;
 	font-size: 14px;
 }
+
+#session-section {
+	margin-bottom: 12px;
+}
+
+.form-label {
+	font-size: 13px;
+	color: #aaa;
+	margin-bottom: 6px;
+}
+
+.form-label button {
+	padding: 0 6px;
+	font-size: 13px;
+	line-height: 1.4;
+}
+
+.form-row {
+	margin-bottom: 8px;
+}
+
+#session-list {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin-bottom: 8px;
+}
+
+#session-list .session-item {
+	text-align: left;
+	background: #333;
+	border: 1px solid #555;
+}
+
+#session-list .session-item:hover {
+	background: #444;
+}

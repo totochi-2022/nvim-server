@@ -36,6 +36,7 @@ class NeovimClient {
         }
 
         this.closePreview();
+        this.refreshSessions();
 
         const addressInput = document.getElementById("nvim-address");
         if (addressInput) {
@@ -697,6 +698,53 @@ class NeovimClient {
                     address: address,
                 }),
             );
+        }
+    }
+
+    async refreshSessions() {
+        const list = document.getElementById("session-list");
+        if (!list) return;
+        try {
+            const res = await fetch("/sessions");
+            const sessions = await res.json();
+            list.innerHTML = "";
+            if (!sessions || sessions.length === 0) {
+                list.textContent = "No running sessions";
+                return;
+            }
+            for (const s of sessions) {
+                const btn = document.createElement("button");
+                btn.className = "session-item";
+                btn.textContent = `${s.label}  (${s.name})`;
+                btn.title = s.address;
+                btn.onclick = () => this.connectToNeovim(s.address);
+                list.appendChild(btn);
+            }
+        } catch (_e) {
+            list.textContent = "Failed to list sessions";
+        }
+    }
+
+    startSession(name) {
+        this.updateStatus("Starting session '" + name + "'...");
+        const payload = JSON.stringify({ type: "spawn", name: name });
+
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            this.connect();
+            const checkConnection = setInterval(() => {
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    clearInterval(checkConnection);
+                    this.ws.send(payload);
+                }
+            }, 100);
+            setTimeout(() => {
+                clearInterval(checkConnection);
+                if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+                    this.updateStatus("Failed to reconnect to server");
+                }
+            }, 5000);
+        } else {
+            this.ws.send(payload);
         }
     }
 

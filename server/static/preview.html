@@ -8,8 +8,8 @@
     <script type="importmap">
     {
         "imports": {
-            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            "three": "/vendor/three.module.js",
+            "three/addons/": "/vendor/three-addons/"
         }
     }
     </script>
@@ -81,7 +81,7 @@
         }
 
         async function renderCSV() {
-            await loadScript("https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js");
+            await loadScript("/vendor/chart.umd.min.js");
             const text = await (await fetch(fileUrl)).text();
             const rows = parseCSV(text);
             if (rows.length < 2) throw new Error("CSVに行が足りません");
@@ -173,7 +173,7 @@
 
         // --- DXF → 2D CAD: dxf ライブラリで SVG に変換して表示（軽量・確実） -----
         async function renderDXF() {
-            const { Helper } = await import("https://esm.sh/dxf@5.3.1");
+            const { Helper } = await import("/vendor/dxf.mjs");
             const text = await (await fetch(fileUrl)).text();
             const svg = new Helper(text).toSVG();
 

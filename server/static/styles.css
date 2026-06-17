@@ -47,6 +47,57 @@ body {
 	border: none;
 }
 
+/* Markdown preview pane (web-only, right split). Width is mirrored in
+   client.js resizeTerminalToFullViewport() so the canvas fills the left half. */
+#preview-pane {
+	display: none;
+	position: fixed;
+	top: 0;
+	right: 0;
+	width: 50vw;
+	height: 100vh;
+	flex-direction: column;
+	background: #1a1a1a;
+	border-left: 2px solid #333;
+	z-index: 10;
+}
+
+#preview-pane.active {
+	display: flex;
+}
+
+#preview-header {
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 4px 10px;
+	background: #2a2a2a;
+	font-size: 13px;
+}
+
+#preview-header button {
+	background: transparent;
+	color: #fff;
+	border: none;
+	cursor: pointer;
+	font-size: 14px;
+	line-height: 1;
+	padding: 2px 6px;
+	border-radius: 3px;
+}
+
+#preview-header button:hover {
+	background: #444;
+}
+
+#preview-frame {
+	flex: 1;
+	width: 100%;
+	border: none;
+	background: #fff;
+}
+
 #terminal:focus {
 	outline: none;
 }

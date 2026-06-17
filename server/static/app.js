@@ -79,3 +79,8 @@ globalThis.startNeovim = function () {
         client.updateStatus("Please enter a valid address");
     }
 };
+
+// Close the markdown preview pane.
+globalThis.closePreview = function () {
+    client.closePreview();
+};

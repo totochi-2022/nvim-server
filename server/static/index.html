@@ -17,6 +17,14 @@
 
     <canvas id="terminal" tabindex="0"></canvas>
 
+    <div id="preview-pane">
+        <div id="preview-header">
+            <span>Markdown Preview</span>
+            <button id="preview-close" onclick="closePreview();">✕</button>
+        </div>
+        <iframe id="preview-frame" src="about:blank"></iframe>
+    </div>
+
     <script src="utility.js"></script>
     <script src="renderer.js"></script>
     <script src="client.js"></script>

@@ -6,6 +6,7 @@ class NeovimClient {
         this.clipboardEnabled = navigator.clipboard &&
             globalThis.isSecureContext;
         this.lastClipboardContent = "";
+        this.previewActive = false;
         this.requestClipboardPermission();
     }
 
@@ -33,6 +34,8 @@ class NeovimClient {
         if (this.renderer) {
             this.renderer = null;
         }
+
+        this.closePreview();
 
         const addressInput = document.getElementById("nvim-address");
         if (addressInput) {
@@ -152,6 +155,10 @@ class NeovimClient {
                 this.sendClipboardToNeovim();
                 break;
             }
+            case "open_preview": {
+                if (msg.url) this.openPreview(msg.url);
+                break;
+            }
             default: {
                 console.log("Unknown message type:", msg.type);
             }
@@ -212,7 +219,11 @@ class NeovimClient {
         const canvas = document.getElementById("terminal");
         if (!canvas || !this.renderer) return;
 
-        const containerWidth = globalThis.innerWidth;
+        // When the markdown preview pane is open it takes the right 50vw, so
+        // the terminal only gets the left half (matches #preview-pane width).
+        const containerWidth = this.previewActive
+            ? Math.floor(globalThis.innerWidth / 2)
+            : globalThis.innerWidth;
         const containerHeight = globalThis.innerHeight;
 
         const newDimensions = this.renderer.resize(
@@ -220,6 +231,29 @@ class NeovimClient {
             containerHeight,
         );
         this.sendResize(newDimensions.width, newDimensions.height);
+    }
+
+    openPreview(url) {
+        const pane = document.getElementById("preview-pane");
+        const frame = document.getElementById("preview-frame");
+        if (!pane || !frame) return;
+
+        frame.src = url;
+        pane.classList.add("active");
+        this.previewActive = true;
+        this.resizeTerminalToFullViewport();
+    }
+
+    closePreview() {
+        const pane = document.getElementById("preview-pane");
+        const frame = document.getElementById("preview-frame");
+        if (pane) pane.classList.remove("active");
+        if (frame) frame.src = "about:blank";
+        this.previewActive = false;
+        this.resizeTerminalToFullViewport();
+
+        const terminal = document.getElementById("terminal");
+        if (terminal) terminal.focus();
     }
 
     connect() {

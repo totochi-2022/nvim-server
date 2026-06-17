@@ -387,6 +387,7 @@ func (ctx *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		ctx.mu.Lock()
 		if session.nvim != nil {
+			ctx.restoreMarkdownPreview(session)
 			session.nvim.Close()
 		}
 		delete(ctx.clients, conn)
@@ -432,6 +433,8 @@ func (ctx *Server) connectSessionToNeovim(session *ClientSession, address string
 		log.Printf("Failed to setup clipboard: %v", err)
 	}
 
+	ctx.setupMarkdownPreview(session)
+
 	go func() {
 		if err := ctx.listenToNeovimEvents(session); err != nil {
 			log.Printf("Error in Neovim event listener: %v", err)
@@ -439,6 +442,55 @@ func (ctx *Server) connectSessionToNeovim(session *ClientSession, address string
 	}()
 
 	return nil
+}
+
+// setupMarkdownPreview redirects markdown-preview.nvim's browser-open hook to
+// the connected web client while this session is attached, so the preview shows
+// in a pane instead of an external browser. The previous value is restored on
+// disconnect (see handleWebSocket) so normal terminal/GUI use is unaffected.
+func (ctx *Server) setupMarkdownPreview(session *ClientSession) {
+	channelID := session.nvim.ChannelID()
+
+	cfg := fmt.Sprintf(`
+if vim.g.nvim_server_prev_mkdp_browserfunc == nil then
+  vim.g.nvim_server_prev_mkdp_browserfunc = vim.g.mkdp_browserfunc or ''
+end
+vim.g.nvim_server_mkdp_channel = %d
+vim.cmd([[
+function! NvimServerOpenPreview(url) abort
+  call rpcnotify(g:nvim_server_mkdp_channel, 'mkdp_open', a:url)
+endfunction
+]])
+vim.g.mkdp_browserfunc = 'NvimServerOpenPreview'
+return true
+`, channelID)
+
+	var ok bool
+	if err := session.nvim.ExecLua(cfg, &ok); err != nil {
+		log.Printf("Failed to setup markdown preview hook: %v", err)
+		return
+	}
+
+	session.nvim.RegisterHandler("mkdp_open", func(url string) {
+		ctx.sendToClient(session, map[string]any{
+			"type": "open_preview",
+			"url":  url,
+		})
+	})
+}
+
+// restoreMarkdownPreview puts markdown-preview.nvim's hook back so that normal
+// (non-web) usage opens an external browser again.
+func (ctx *Server) restoreMarkdownPreview(session *ClientSession) {
+	if session.nvim == nil {
+		return
+	}
+	var ok bool
+	_ = session.nvim.ExecLua(`
+vim.g.mkdp_browserfunc = vim.g.nvim_server_prev_mkdp_browserfunc or ''
+vim.g.nvim_server_prev_mkdp_browserfunc = nil
+return true
+`, &ok)
 }
 
 func (ctx *Server) setupClipboard(session *ClientSession) error {

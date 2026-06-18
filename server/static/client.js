@@ -113,7 +113,7 @@ class NeovimClient {
 
                 this.sendCommand("set mouse=a");
 
-                document.getElementById("terminal").focus();
+                this.focusInput();
                 break;
             }
             case "session_closed": {
@@ -256,8 +256,7 @@ class NeovimClient {
         this.previewActive = false;
         this.resizeTerminalToFullViewport();
 
-        const terminal = document.getElementById("terminal");
-        if (terminal) terminal.focus();
+        this.focusInput();
     }
 
     connect() {
@@ -301,7 +300,7 @@ class NeovimClient {
         let dragThrottle = null;
 
         terminal.addEventListener("click", () => {
-            terminal.focus();
+            this.focusInput();
         });
 
         terminal.addEventListener("contextmenu", (event) => {
@@ -324,7 +323,7 @@ class NeovimClient {
 
         terminal.addEventListener("mousedown", (event) => {
             if (!this.connected || !this.renderer) return;
-            terminal.focus();
+            this.focusInput();
 
             const coords = this.getMouseCoords(event);
             this.sendMouseEvent("press", coords.row, coords.col, event.button);
@@ -417,16 +416,36 @@ class NeovimClient {
         );
     }
 
+    // Keyboard focus lives on the hidden #ime-input textarea so that IME
+    // (Japanese conversion) works reliably — a <canvas> is not an editable
+    // element, so composition wouldn't start on it.
+    focusInput() {
+        const input = document.getElementById("ime-input");
+        if (input) input.focus();
+    }
+
+    // Move the hidden input to the cursor cell so the IME candidate window
+    // appears in the right place.
+    positionInput() {
+        const input = document.getElementById("ime-input");
+        if (!input || !this.renderer) return;
+        input.style.left = (this.renderer.cursor.col * this.renderer.cellWidth) + "px";
+        input.style.top = (this.renderer.cursor.row * this.renderer.cellHeight) + "px";
+    }
+
     setupKeyboardHandlers() {
         document.addEventListener("DOMContentLoaded", () => {
-            const terminal = document.getElementById("terminal");
-            if (!terminal) {
-                console.error("Terminal element not found");
+            const input = document.getElementById("ime-input");
+            if (!input) {
+                console.error("IME input element not found");
                 return;
             }
 
-            terminal.addEventListener("keydown", (event) => {
+            input.addEventListener("keydown", (event) => {
                 if (!this.connected) return;
+                // IME 変換中はキーを横取りせず textarea に任せる
+                // (keyCode 229 は IME 処理中の keydown)
+                if (event.isComposing || event.keyCode === 229) return;
                 event.preventDefault();
 
                 // GUI-style font zoom (Neovide-like). Handled in the client so
@@ -455,7 +474,23 @@ class NeovimClient {
                 }
             });
 
-            terminal.focus();
+            // IME 変換確定: 確定文字列を Neovim に送り、textarea を空に戻す
+            input.addEventListener("compositionstart", () => this.positionInput());
+            input.addEventListener("compositionend", (event) => {
+                const text = event.data;
+                input.value = "";
+                if (text) this.sendInput(text);
+            });
+
+            // フォーカスが textarea に移ったので paste もここで受ける
+            input.addEventListener("paste", (event) => {
+                if (!this.connected) return;
+                event.preventDefault();
+                const text = event.clipboardData.getData("text");
+                if (text) this.sendInput(text);
+            });
+
+            this.focusInput();
         });
     }
 

@@ -102,6 +102,27 @@ body {
 	outline: none;
 }
 
+/* IME 用の隠し入力。カーソル位置に置き、変換候補ウィンドウがそこに出るように
+   する。テキスト/キャレットは透明（描画は Neovim 側が行う）。 */
+#ime-input {
+	position: fixed;
+	top: 0;
+	left: 0;
+	z-index: 5;
+	width: 2ch;
+	height: 1.2em;
+	padding: 0;
+	margin: 0;
+	border: none;
+	outline: none;
+	resize: none;
+	overflow: hidden;
+	background: transparent;
+	color: transparent;
+	caret-color: transparent;
+	white-space: nowrap;
+}
+
 #connection-form input {
 	padding: 8px;
 	margin-right: 10px;

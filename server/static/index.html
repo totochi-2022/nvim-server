@@ -26,6 +26,10 @@
     </div>
 
     <canvas id="terminal" tabindex="0"></canvas>
+    <!-- IME(日本語変換)用の隠し入力。canvasは編集不可なのでこれにキーボード
+         フォーカスを置き、変換確定文字列を Neovim へ送る -->
+    <textarea id="ime-input" autocomplete="off" autocorrect="off"
+        autocapitalize="off" spellcheck="false"></textarea>
 
     <div id="preview-pane">
         <div id="preview-header">

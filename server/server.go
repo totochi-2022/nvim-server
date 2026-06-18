@@ -87,7 +87,15 @@ func Serve(address string) error {
 }
 
 func (ctx *Server) listenToNeovimEvents(session *ClientSession) error {
-	session.nvim.RegisterHandler("redraw", func(updates ...[]any) {
+	// Capture the connection once: a concurrent disconnect/reconnect can set
+	// session.nvim to nil, and calling methods on a nil *Nvim segfaults and
+	// takes the whole server down. Guard against that.
+	nv := session.nvim
+	if nv == nil {
+		return nil
+	}
+
+	nv.RegisterHandler("redraw", func(updates ...[]any) {
 		if !session.active {
 			return
 		}
@@ -100,11 +108,11 @@ func (ctx *Server) listenToNeovimEvents(session *ClientSession) error {
 		}
 	})
 
-	if err := session.nvim.Subscribe("redraw"); err != nil {
+	if err := nv.Subscribe("redraw"); err != nil {
 		return fmt.Errorf("failed to subscribe to redraw events: %w", err)
 	}
 
-	err := session.nvim.Serve()
+	err := nv.Serve()
 
 	log.Printf("Neovim session closed for client")
 

@@ -7,6 +7,7 @@ class NeovimRenderer {
         this.baseFontSize = 14;
         this.cellWidth = 12;
         this.cellHeight = 20;
+        this.textYOffset = 0;
         this.rows = 24;
         this.cols = 80;
         this.grid = [];
@@ -47,6 +48,14 @@ class NeovimRenderer {
         this.cellHeight = (ascent && descent)
             ? Math.ceil(ascent + descent)
             : Math.ceil(this.fontSize * 1.2);
+
+        // Vertical text offset within a cell. With textBaseline "top" the glyph
+        // box top sits at y, so it already fills the cell; only the ceil-rounding
+        // slack is centered. (The old hardcoded "+2" pushed text low, which was
+        // visible as a low status line on its colored bar.)
+        this.textYOffset = (ascent && descent)
+            ? Math.max(0, Math.round((this.cellHeight - (ascent + descent)) / 2))
+            : 0;
 
         // Recompute the grid for the new cell size. Prefer the client's
         // viewport-based resize (CSS pixels, dpr-aware) so the row count matches
@@ -263,7 +272,7 @@ class NeovimRenderer {
                     this.grid[this.cursor.row][this.cursor.col];
                 if (cell && cell.char && cell.char !== " ") {
                     this.ctx.fillStyle = cell.bg || this.colors.bg;
-                    this.ctx.fillText(cell.char, x, y + 2);
+                    this.ctx.fillText(cell.char, x, y + this.textYOffset);
                 }
                 break;
             }
@@ -728,10 +737,10 @@ class NeovimRenderer {
                 if (text.isWideChar) {
                     const oldAlign = this.ctx.textAlign;
                     this.ctx.textAlign = "left";
-                    this.ctx.fillText(text.char, text.x, text.y + 2);
+                    this.ctx.fillText(text.char, text.x, text.y + this.textYOffset);
                     this.ctx.textAlign = oldAlign;
                 } else {
-                    this.ctx.fillText(text.char, text.x, text.y + 2);
+                    this.ctx.fillText(text.char, text.x, text.y + this.textYOffset);
                 }
             }
         }

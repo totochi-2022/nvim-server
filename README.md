@@ -39,6 +39,10 @@ Description=nvim-server
 [Service]
 ExecStart=nvim-server --address 0.0.0.0:9998
 Restart=always
+# Neovim instances spawned via "Start Neovim" are child processes in this
+# unit's cgroup, so the default KillMode (control-group) kills them on
+# restart. Use "process" to replace only nvim-server and keep sessions alive.
+KillMode=process
 
 [Install]
 WantedBy=default.target

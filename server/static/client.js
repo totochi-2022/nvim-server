@@ -160,6 +160,18 @@ class NeovimClient {
                 if (msg.url) this.openPreview(msg.url, msg.label);
                 break;
             }
+            case "recompute_size": {
+                // Neovim asked us to re-measure the viewport and resend the
+                // grid size (recovery for a too-small initial attach). Reuse the
+                // canonical window-resize path (handleResize) by dispatching a
+                // synthetic resize event; resizeTerminalToFullViewport() uses a
+                // different height (no -40 chrome offset) and would desync the
+                // grid, pushing the status/cmdline off-screen.
+                if (this.connected && this.renderer) {
+                    globalThis.dispatchEvent(new Event("resize"));
+                }
+                break;
+            }
             default: {
                 console.log("Unknown message type:", msg.type);
             }

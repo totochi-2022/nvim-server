@@ -506,6 +506,40 @@ func (ctx *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	})
 	session.writeMu.Unlock()
 
+	// Keepalive: reap dead browser connections (closed tab / dropped network)
+	// so their attached Neovim UI detaches promptly. With ext_multigrid:false
+	// all UIs share ONE grid sized to the SMALLEST attached UI, so a lingering
+	// zombie UI pins the grid tiny — a reconnect then starts in a small area and
+	// even <C-l> (resize) can't grow it. Pinging lets a stale read time out.
+	const (
+		pongWait   = 60 * time.Second
+		pingPeriod = 54 * time.Second // must be < pongWait
+	)
+	_ = conn.SetReadDeadline(time.Now().Add(pongWait))
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(pongWait))
+	})
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		ticker := time.NewTicker(pingPeriod)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				// WriteControl is safe to call concurrently with other writes
+				// (gorilla guarantees this), so no writeMu needed here.
+				if err := conn.WriteControl(
+					websocket.PingMessage, nil, time.Now().Add(10*time.Second),
+				); err != nil {
+					return
+				}
+			}
+		}
+	}()
+
 	for {
 		var msg map[string]any
 		err := conn.ReadJSON(&msg)
@@ -523,6 +557,23 @@ func (ctx *Server) connectSessionToNeovim(session *ClientSession, address string
 		session.nvim.Close()
 		session.nvim = nil
 	}
+
+	// Single-viewer policy: this server is driven by one client at a time, so a
+	// reconnect to the same Neovim evicts any previous connection to it. Without
+	// this, the old (usually already-dead) UI lingers and — since all UIs share
+	// one grid sized to the smallest (ext_multigrid:false) — pins the grid tiny
+	// until keepalive reaps it ~60s later. Closing it here detaches that UI at
+	// once, so Neovim regrows the grid to this fresh UI immediately.
+	ctx.mu.Lock()
+	for _, other := range ctx.clients {
+		if other != session && other.address == address && other.nvim != nil {
+			log.Printf("Evicting previous connection to %s", address)
+			other.nvim.Close() // detaches its UI; its read loop then cleans up
+			other.nvim = nil
+			other.active = false
+		}
+	}
+	ctx.mu.Unlock()
 
 	client, err := nvim.Dial(address)
 	if err != nil {
@@ -615,6 +666,15 @@ func (ctx *Server) setupWebOpen(session *ClientSession) {
 			"type":  "open_preview",
 			"url":   url,
 			"label": label,
+		})
+	})
+	// web_resize lets Neovim ask the browser to re-measure its viewport and
+	// resend the grid size. Useful to recover when the UI attached with a tiny
+	// grid (small viewport / font not yet measured at attach time). Bind it in
+	// Neovim, e.g. to <C-l>: rpcnotify(g:nvim_server_channel, 'web_resize').
+	session.nvim.RegisterHandler("web_resize", func() {
+		ctx.sendToClient(session, map[string]any{
+			"type": "recompute_size",
 		})
 	})
 }

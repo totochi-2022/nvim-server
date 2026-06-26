@@ -677,6 +677,14 @@ func (ctx *Server) setupWebOpen(session *ClientSession) {
 			"type": "recompute_size",
 		})
 	})
+	// web_home asks the browser to return to the session selection screen
+	// (connection form) without killing this Neovim instance. Bind it in
+	// Neovim, e.g. rpcnotify(g:nvim_server_channel, 'web_home').
+	session.nvim.RegisterHandler("web_home", func() {
+		ctx.sendToClient(session, map[string]any{
+			"type": "show_form",
+		})
+	})
 }
 
 // restoreWebOpen clears the channel so tools fall back to a real browser once the

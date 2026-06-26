@@ -160,6 +160,13 @@ class NeovimClient {
                 if (msg.url) this.openPreview(msg.url, msg.label);
                 break;
             }
+            case "show_form": {
+                // Neovim asked to return to the session selection screen
+                // (web_home). Surfaces the connection form + session list
+                // without killing the underlying Neovim instance.
+                this.showConnectionForm();
+                break;
+            }
             case "recompute_size": {
                 // Neovim asked us to re-measure the viewport and resend the
                 // grid size (recovery for a too-small initial attach). Reuse the

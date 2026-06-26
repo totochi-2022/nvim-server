@@ -23,6 +23,39 @@ requirements.
 - Full clipboard integration using a custom clipboard provider.
 - GPU acceleration.
 
+## Fork Changes
+
+What this fork adds on top of upstream (see `git log` for details):
+
+**Sessions**
+
+- "Start Neovim" button to launch a local headless instance from the web UI.
+- Discover and pick among multiple running Neovim sessions.
+- Return to the session-selection screen from within a session (`web_home` RPC).
+
+**Preview pane (web-only)**
+
+- Built-in dispatch previewer for SVG / CSV (charts) / STL (3D) / DXF (2D CAD),
+  rendered in a split pane.
+- `markdown-preview.nvim` shown in a split pane.
+- External preview URLs (e.g. `typst-preview`) routed to the browser pane.
+- Preview libraries are vendored for offline use (see
+  [`server/static/vendor/LICENSES.md`](server/static/vendor/LICENSES.md)).
+
+**Font & rendering**
+
+- GUI-style font zoom: `Ctrl +`/`=`, `Ctrl -`, `Ctrl 0` (handled client-side,
+  never reaches Neovim).
+- Honors Neovim's `guifont`; falls back to Nerd Fonts for icons the primary
+  font lacks.
+- Glyphs centered in the cell; border-gap and grid-sizing fixes.
+
+**Input & stability**
+
+- Reliable IME (Japanese) input via a hidden textarea.
+- Recovers the web UI from a too-small / pinned grid.
+- No longer crashes when a Neovim connection drops mid-connect.
+
 ## Usage
 
 First spawn the server:

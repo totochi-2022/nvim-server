@@ -1,5 +1,11 @@
 # Neovim in the Browser
 
+> **Note:** This is a personal fork of
+> [Kraust/nvim-server](https://github.com/Kraust/nvim-server) with additional,
+> fairly opinionated features (offline preview dispatcher, multi-session
+> handling, IME input, etc.). It is maintained for my own workflow and is not
+> intended to be upstreamed. See [Licensing](#licensing) below.
+
 <img width="1960" height="1120" alt="Screenshot from 2025-08-30 20-58-16" src="https://github.com/user-attachments/assets/a84ab3c0-176b-4b3d-a413-5586fde4c7e3" />
 
 `nvim-server` is a web frontend for [Neovim](https://neovim.io/) designed around
@@ -75,4 +81,15 @@ creating an optimal development workflow.
 - [Code Server](https://github.com/coder/code-server) - VSCode in the Browser
 - [Glowing Bear](https://github.com/glowing-bear/glowing-bear) - WeeChat in the Browser
 - [Neovide](https://github.com/neovide/neovide) - An amazing Neovim GUI that I've been using since 2020.
+
+## Licensing
+
+This project is MIT licensed (see [`LICENSE`](LICENSE)). It is a fork of
+[Kraust/nvim-server](https://github.com/Kraust/nvim-server); the original
+copyright is retained and fork modifications are added under the same license.
+
+Third-party libraries bundled under `server/static/vendor/` (three.js, Chart.js,
+dxf) are distributed under their own MIT licenses; see
+[`server/static/vendor/LICENSES.md`](server/static/vendor/LICENSES.md) for the
+notices.
 

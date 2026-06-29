@@ -493,11 +493,48 @@ class NeovimClient {
                 }
             });
 
+            // IME 未確定文字列をカーソル位置にインライン表示する。
+            // 既定では textarea は透明・2ch幅なので未確定文字が見えず、IME が独自の
+            // 変換ウィンドウに出してしまう。変換中だけ可視化してグリッド同色で重ねる。
+            const showPreedit = () => {
+                const r = this.renderer;
+                if (!r) return;
+                this.positionInput();
+                input.style.font = `${r.fontSize}px ${r.fontFamily}`;
+                input.style.height = r.cellHeight + "px";
+                input.style.lineHeight = r.cellHeight + "px";
+                input.style.color = (r.colors && r.colors.fg) || "#ffffff";
+                input.style.background = (r.colors && r.colors.bg) || "#1e1e1e";
+                input.style.caretColor = (r.colors && r.colors.fg) || "#ffffff";
+                input.style.zIndex = "50";
+                sizePreedit();
+            };
+            // 未確定文字列の表示幅をグリッドのセル数に合わせる（全角は2セル扱い）。
+            const sizePreedit = () => {
+                const r = this.renderer;
+                if (!r) return;
+                let cols = 0;
+                for (const ch of input.value) {
+                    cols += ch.codePointAt(0) > 0x10ff ? 2 : 1;
+                }
+                input.style.width = Math.max(2, cols + 1) * r.cellWidth + "px";
+            };
+            // 変換確定後は元の不可視状態へ戻す。
+            const hidePreedit = () => {
+                input.style.color = "transparent";
+                input.style.background = "transparent";
+                input.style.caretColor = "transparent";
+                input.style.width = "2ch";
+                input.style.zIndex = "5";
+            };
+
+            input.addEventListener("compositionstart", () => showPreedit());
+            input.addEventListener("compositionupdate", () => sizePreedit());
             // IME 変換確定: 確定文字列を Neovim に送り、textarea を空に戻す
-            input.addEventListener("compositionstart", () => this.positionInput());
             input.addEventListener("compositionend", (event) => {
                 const text = event.data;
                 input.value = "";
+                hidePreedit();
                 if (text) this.sendInput(text);
             });
 

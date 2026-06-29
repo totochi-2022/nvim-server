@@ -7,6 +7,11 @@ class NeovimClient {
             globalThis.isSecureContext;
         this.lastClipboardContent = "";
         this.previewActive = false;
+        this.previewWidthPct = 50; // プレビューペイン幅(vw%)。ss モードの ]/[ で調整
+        try {
+            const v = parseInt(localStorage.getItem("previewWidthPct"), 10);
+            if (v >= 20 && v <= 80) this.previewWidthPct = v;
+        } catch (e) { /* localStorage 不可は無視 */ }
         this.requestClipboardPermission();
     }
 
@@ -160,6 +165,30 @@ class NeovimClient {
                 if (msg.url) this.openPreview(msg.url, msg.label);
                 break;
             }
+            case "preview_resize": {
+                this.adjustPreviewWidth(msg.delta || 0, true);
+                break;
+            }
+            case "preview_resize_css": {
+                this.adjustPreviewWidth(msg.delta || 0, false);
+                break;
+            }
+            case "preview_commit": {
+                this.commitPreviewWidth();
+                break;
+            }
+            case "preview_reset": {
+                this.setPreviewWidth(50, true);
+                break;
+            }
+            case "close_preview": {
+                this.closePreview(true);
+                break;
+            }
+            case "close_preview_css": {
+                this.closePreview(false);
+                break;
+            }
             case "show_form": {
                 // Neovim asked to return to the session selection screen
                 // (web_home). Surfaces the connection form + session list
@@ -239,10 +268,11 @@ class NeovimClient {
         const canvas = document.getElementById("terminal");
         if (!canvas || !this.renderer) return;
 
-        // When the markdown preview pane is open it takes the right 50vw, so
-        // the terminal only gets the left half (matches #preview-pane width).
+        // When the preview pane is open it takes previewWidthPct of the width on
+        // the right; the terminal gets the rest. Keep this in sync with the pane
+        // element width set in openPreview()/setPreviewWidth().
         const containerWidth = this.previewActive
-            ? Math.floor(globalThis.innerWidth / 2)
+            ? Math.floor(globalThis.innerWidth * (1 - this.previewWidthPct / 100))
             : globalThis.innerWidth;
         const containerHeight = globalThis.innerHeight;
 
@@ -262,18 +292,48 @@ class NeovimClient {
         if (title) title.textContent = label || "Preview";
 
         frame.src = url;
+        pane.style.width = this.previewWidthPct + "vw";
         pane.classList.add("active");
         this.previewActive = true;
-        this.resizeTerminalToFullViewport();
+        // 正規リサイズ経路(handleResize)に寄せる。resizeTerminalToFullViewport は
+        // canvas寸法と chrome 高さ(-40)を欠きグリッドがズレるため使わない。
+        globalThis.dispatchEvent(new Event("resize"));
     }
 
-    closePreview() {
+    // プレビューペイン幅(vw%)を設定。20–80% にクランプし、ターミナル側も再フロー。
+    // pct: 目標幅(vw%)。reflow=true ならターミナルを即 reflow（従来動作・単発キー用）。
+    // reflow=false なら CSS のみ更新し reflow は保留（submode 連打用、commit で反映）。
+    setPreviewWidth(pct, reflow) {
+        this.previewWidthPct = Math.max(20, Math.min(80, Math.round(pct)));
+        const pane = document.getElementById("preview-pane");
+        if (pane) pane.style.width = this.previewWidthPct + "vw"; // 幅は即時反映
+        if (reflow && this.previewActive) {
+            globalThis.dispatchEvent(new Event("resize"));
+        }
+        try {
+            localStorage.setItem("previewWidthPct", String(this.previewWidthPct));
+        } catch (e) { /* 無視 */ }
+    }
+
+    adjustPreviewWidth(deltaPct, reflow) {
+        this.setPreviewWidth(this.previewWidthPct + deltaPct, reflow);
+    }
+
+    // 保留(reflow=false)していた幅変更をターミナル reflow に反映（submode 終了時）。
+    commitPreviewWidth() {
+        // 開いていても閉じていても現在の状態へ reflow（handleResize が previewActive で判定）
+        globalThis.dispatchEvent(new Event("resize"));
+    }
+
+    closePreview(reflow = true) {
         const pane = document.getElementById("preview-pane");
         const frame = document.getElementById("preview-frame");
         if (pane) pane.classList.remove("active");
         if (frame) frame.src = "about:blank";
         this.previewActive = false;
-        this.resizeTerminalToFullViewport();
+        // reflow=false のときはターミナル reflow を保留（submode 連打中の中断回避）。
+        // submode 終了時に commit() がまとめて reflow する。
+        if (reflow) globalThis.dispatchEvent(new Event("resize"));
 
         this.focusInput();
     }
@@ -725,7 +785,10 @@ class NeovimClient {
                 containerWidth = globalThis.innerWidth;
                 containerHeight = globalThis.innerHeight - formHeight - 40;
             } else {
-                containerWidth = globalThis.innerWidth;
+                // プレビューペインが開いている時はその幅を引いた残りがターミナル。
+                containerWidth = this.previewActive
+                    ? Math.floor(globalThis.innerWidth * (1 - this.previewWidthPct / 100))
+                    : globalThis.innerWidth;
                 containerHeight = globalThis.innerHeight - 40;
             }
 

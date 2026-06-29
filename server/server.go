@@ -685,6 +685,35 @@ func (ctx *Server) setupWebOpen(session *ClientSession) {
 			"type": "show_form",
 		})
 	})
+	// web_preview_resize / _reset / _close: プレビューペインの幅調整・閉じる。
+	// preview_pane.lua から rpcnotify(g:nvim_server_channel, ...) で呼ぶ。
+	session.nvim.RegisterHandler("web_preview_resize", func(delta int) {
+		ctx.sendToClient(session, map[string]any{
+			"type":  "preview_resize",
+			"delta": delta,
+		})
+	})
+	// CSS のみ更新（reflow 保留, submode 連打用）
+	session.nvim.RegisterHandler("web_preview_resize_css", func(delta int) {
+		ctx.sendToClient(session, map[string]any{
+			"type":  "preview_resize_css",
+			"delta": delta,
+		})
+	})
+	// 保留した幅変更を reflow に反映（submode 終了時）
+	session.nvim.RegisterHandler("web_preview_commit", func() {
+		ctx.sendToClient(session, map[string]any{"type": "preview_commit"})
+	})
+	session.nvim.RegisterHandler("web_preview_reset", func() {
+		ctx.sendToClient(session, map[string]any{"type": "preview_reset"})
+	})
+	session.nvim.RegisterHandler("web_preview_close", func() {
+		ctx.sendToClient(session, map[string]any{"type": "close_preview"})
+	})
+	// ペインを隠すが reflow は保留（submode 用、commit で反映）
+	session.nvim.RegisterHandler("web_preview_close_css", func() {
+		ctx.sendToClient(session, map[string]any{"type": "close_preview_css"})
+	})
 }
 
 // restoreWebOpen clears the channel so tools fall back to a real browser once the

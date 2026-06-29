@@ -756,10 +756,30 @@ class NeovimRenderer {
         this.canvas.width = width * dpr;
         this.canvas.height = height * dpr;
 
+        const oldGrid = this.grid;
+        const oldCols = this.cols;
+        const oldRows = this.rows;
+
         this.cols = Math.floor(width / this.cellWidth);
         this.rows = Math.floor(height / this.cellHeight);
 
         this.initGrid();
+
+        // Carry over overlapping cells so a resize doesn't blank the screen
+        // while waiting for Neovim's next redraw. Crucial inside a minor-mode
+        // submode, where Neovim defers redraw flushes for up to 'timeoutlen'
+        // (set to 10s by minor-mode.nvim) during the pending key sequence.
+        if (oldGrid) {
+            const rows = Math.min(oldRows, this.rows);
+            const cols = Math.min(oldCols, this.cols);
+            for (let r = 0; r < rows; r++) {
+                const oldRow = oldGrid[r];
+                if (!oldRow) continue;
+                for (let c = 0; c < cols; c++) {
+                    if (oldRow[c]) this.grid[r][c] = oldRow[c];
+                }
+            }
+        }
 
         this.ctx.scale(dpr, dpr);
         this.ctx.font = `${this.fontSize}px ${this.fontFamily}`;
